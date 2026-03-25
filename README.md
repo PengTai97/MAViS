@@ -24,12 +24,11 @@ conda env create -f environment.yml
 conda activate mavis
 pip install -r requirements.txt
 ```
-### 2️⃣ Install Python dependencies
+### 2️⃣ Install SAM2
 ```bash
-git clone https://github.com/IDEA-Research/Grounded-SAM-2
-cd Grounded-SAM-2
+git clone https://github.com/facebookresearch/sam2
+cd sam2
 
-pip install -e ./grounding_dino
 pip install -e .
 ```
 ### ⚠️ Optional (Performance Boost)
