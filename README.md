@@ -112,8 +112,10 @@ We sincerely thank the authors for making their code and models publicly availab
 If you find this work useful, please consider citing:
 
 ```bibtex
-@article{mavis2026,
+@article{peng2026mavis,
   title={MAViS: A Multi-Agent Approach for Training-Free Referring Video Object Segmentation},
+  author={Peng, Tai and Chen, Chu-Song},
   journal={IEEE Transactions on Consumer Electronics},
-  year={2026}
+  year={2026},
+  publisher={IEEE}
 }
