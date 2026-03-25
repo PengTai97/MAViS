@@ -79,7 +79,6 @@ python mavis_inference_pipeline.py \
   --description "a man in black shirt" \
   --sam2_checkpoint /path/to/sam2.pt \
   --sam2_config /path/to/sam2.yaml \
-  --output_json output.json
 ```
 
 ### 🧪 Benchmark Inference
@@ -88,11 +87,10 @@ We provide a unified benchmark script:
 python benchmark_inference_pipeline.py \
   --dataset {referformer,davis,rvos,mevis} \
   --dataset_root /path/to/dataset \
-  --split train \
+  --split {valid_u, valid} \
   --sam2_checkpoint /path/to/sam2.pt \
   --sam2_config /path/to/sam2.yaml \
   --prediction_root outputs \
-  --metadata_root meta
 ```
 ## Release Notes
 - **[2026/01/06]** 🔥 Release our training-free Referring Video Object Segmentation GitHub page.
