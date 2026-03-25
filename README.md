@@ -30,6 +30,12 @@ git clone https://github.com/facebookresearch/sam2
 cd sam2
 pip install -e .
 ```
+Download Checkpoints
+```bash
+cd checkpoints && \
+./download_ckpts.sh && \
+cd ..
+```
 ### 🤖 Qwen2.5-VL Model
 
 MAViS uses the Qwen2.5-VL-7B-Instruct model as the multimodal backbone.
