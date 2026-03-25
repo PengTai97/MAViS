@@ -8,10 +8,10 @@
 
 ## ✨ Highlights
 
-🔹 Training-free referring video object segmentation
-🔹 Multi-agent pipeline (Video Summary → Keyframe Selection → Object Grounding)
-🔹 Efficient inference with local MLLM (Qwen-2.5VL-7B), the system runs on a 24G GPU
-🔹 Achieves state-of-the-art (SOTA) performance across multiple benchmarks (Ref-Youtube-VOS, Ref-DAVIS17, MeViS)
+- Training-free referring video object segmentation
+- Multi-agent pipeline (Video Summary → Keyframe Selection → Object Grounding)
+- Efficient inference with local MLLM (Qwen-2.5VL-7B), the system runs on a 24G GPU
+- Achieves state-of-the-art (SOTA✨) performance across multiple benchmarks (Ref-Youtube-VOS, Ref-DAVIS17, MeViS)
 
 ---
 
@@ -101,8 +101,8 @@ python benchmark_inference_pipeline.py \
 
 This project builds upon several excellent open-source works:
 
-- Grounded-SAM-2: https://github.com/IDEA-Research/Grounded-SAM-2    
-- Qwen-VL: https://github.com/QwenLM/Qwen-VL  
+- SAM-2: https://github.com/facebookresearch/sam2
+- Qwen-2.5VL: https://github.com/QwenLM/Qwen3-VL
 
 We sincerely thank the authors for making their code and models publicly available.
 
