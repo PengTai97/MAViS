@@ -10,7 +10,7 @@
 
 - 🔹 Training-free referring video object segmentation
 - 🔹 Multi-agent pipeline (Video Summary → Keyframe Selection → Object Grounding)
-- 🔹 Efficient inference with local MLLM (Qwen-VL)
+- 🔹 Efficient inference with local MLLM (Qwen-2.5VL-7B)
 - 🔹 Compatible with multiple benchmarks (Ref-Youtube-VOS, DAVIS17, MeViS, RVOS)
 
 ---
