@@ -72,7 +72,7 @@ Submit your result to the online evaluation [server](https://codalab.lisn.upsacl
 
 ### Ref-DAVIS-17
 
-###🚀 Quick Demo (Single Video)
+### 🚀 Quick Demo (Single Video)
 ```bash
 python mavis_inference_pipeline.py \
   --video_dir /path/to/video_frames \
@@ -82,7 +82,7 @@ python mavis_inference_pipeline.py \
   --output_json output.json
 ```
 
-###🧪 Benchmark Inference
+### 🧪 Benchmark Inference
 We provide a unified benchmark script:
 ```bash
 python benchmark_inference_pipeline.py \
@@ -97,3 +97,23 @@ python benchmark_inference_pipeline.py \
 ## Release Notes
 - **[2026/01/06]** 🔥 Release our training-free Referring Video Object Segmentation GitHub page.
 - **[2025/12/25]** 🎉 Our Paper has been accepted by **IEEE Transactions on Consumer Electronics.**!
+- 
+## 🙌 Acknowledgements
+
+This project builds upon several excellent open-source works:
+
+- Grounded-SAM-2: https://github.com/IDEA-Research/Grounded-SAM-2    
+- Qwen-VL: https://github.com/QwenLM/Qwen-VL  
+
+We sincerely thank the authors for making their code and models publicly available.
+
+## 📄 Citation
+
+If you find this work useful, please consider citing:
+
+```bibtex
+@article{mavis2026,
+  title={MAViS: A Multi-Agent Approach for Training-Free Referring Video Object Segmentation},
+  journal={IEEE Transactions on Consumer Electronics},
+  year={2026}
+}
