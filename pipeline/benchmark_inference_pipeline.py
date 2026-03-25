@@ -16,6 +16,7 @@ from sam2.build_sam import build_sam2_video_predictor
 from video_summarization_agent import VideoSummarizationAgent, load_qwen2_5_vl_model
 from keyframe_selection_agent import KeyframeSelectionAgent
 from object_grounding_agent import ObjectGroundingAgent
+from metrics import get_r2vos_robustness, db_eval_iou, db_eval_boundary
 
 
 # -----------------------------
@@ -286,50 +287,22 @@ def save_mask_sequence(
     result: MavisResult,
     frame_paths: Sequence[str],
     output_dir: str,
-    dataset_name: str,
-    target: Mapping[str, Any],
+    palette_mask: bool = False,
 ):
     os.makedirs(output_dir, exist_ok=True)
     height, width = get_image_size(frame_paths[0])
-    name = dataset_name.lower()
-
-    if name == "mevis":
-        num_frames_val = int(target["num_frames"])
-        for frame_idx in range(num_frames_val):
-            pred_mask = result.masks_by_frame.get(frame_idx)
-            if pred_mask:
-                merged = combine_object_masks(pred_mask, (height, width))
-            else:
-                merged = np.zeros((height, width), dtype=np.uint8)
-            out_path = os.path.join(output_dir, f"{frame_idx:05d}.png")
-            cv2.imwrite(out_path, (merged * 255).astype(np.uint8))
-        return
-
-    if name == "rvos":
-        frame_indices = target.get("frames_idx", list(range(len(frame_paths))))
-        if hasattr(frame_indices, "tolist"):
-            frame_indices = frame_indices.tolist()
-        for current_frame_idx in frame_indices:
-            current_frame_idx = int(current_frame_idx)
-            pred_mask = result.masks_by_frame.get(current_frame_idx)
-            if pred_mask:
-                merged = combine_object_masks(pred_mask, (height, width))
-            else:
-                merged = np.zeros((height, width), dtype=np.uint8)
-            frame_file_name = os.path.basename(frame_paths[current_frame_idx])
-            frame_stem = Path(frame_file_name).stem
-            out_path = os.path.join(output_dir, f"{frame_stem}.png")
-            cv2.imwrite(out_path, (merged * 255).astype(np.uint8))
-        return
 
     for frame_idx, frame_path in enumerate(frame_paths):
+        stem = Path(frame_path).stem
         pred_mask = result.masks_by_frame.get(frame_idx)
         if pred_mask:
             merged = combine_object_masks(pred_mask, (height, width))
         else:
             merged = np.zeros((height, width), dtype=np.uint8)
-        stem = Path(frame_path).stem
+
         out_path = os.path.join(output_dir, f"{stem}.png")
+        if palette_mask:
+            merged = (merged * 255).astype(np.uint8)
         cv2.imwrite(out_path, merged)
 
 
@@ -352,35 +325,76 @@ def save_metadata_json(result: MavisResult, save_path: str):
 
 
 
-def mask_iou(pred: np.ndarray, gt: np.ndarray) -> float:
-    pred_bin = pred.astype(bool)
-    gt_bin = gt.astype(bool)
-    union = np.logical_or(pred_bin, gt_bin).sum()
-    if union == 0:
-        return 1.0
-    inter = np.logical_and(pred_bin, gt_bin).sum()
-    return float(inter / union)
+
+def _to_numpy_uint8_mask(mask: Any) -> np.ndarray:
+    if hasattr(mask, "detach"):
+        mask = mask.detach().cpu().numpy()
+    mask = np.asarray(mask).astype(np.uint8)
+    return np.squeeze(mask)
 
 
+def _resolve_frame_indices(target: Mapping[str, Any], fallback_num_frames: int) -> List[int]:
+    frame_indices = target.get("frames_idx")
+    if frame_indices is None:
+        return list(range(fallback_num_frames))
+    if hasattr(frame_indices, "tolist"):
+        frame_indices = frame_indices.tolist()
+    return [int(x) for x in frame_indices]
 
-def evaluate_sequence_iou(result: MavisResult, target: Mapping[str, Any]) -> Dict[str, float]:
-    frame_indices = list(map(int, target["frames_idx"].tolist() if hasattr(target["frames_idx"], "tolist") else target["frames_idx"]))
-    gt_masks: Mapping[int, np.ndarray] = target["masks"]
-    h, w = map(int, target["orig_size"].tolist() if hasattr(target["orig_size"], "tolist") else target["orig_size"])
 
-    per_frame = []
-    for local_idx, dataset_frame_idx in enumerate(frame_indices):
-        pred_mask_dict = result.masks_by_frame.get(local_idx, {})
-        pred_mask = combine_object_masks(pred_mask_dict, (h, w)) if pred_mask_dict else np.zeros((h, w), dtype=np.uint8)
-        gt_mask = np.asarray(gt_masks[dataset_frame_idx]).astype(np.uint8)
-        per_frame.append(mask_iou(pred_mask, gt_mask))
+def evaluate_sequence_metrics(result: MavisResult, target: Mapping[str, Any]) -> Dict[str, Any]:
+    frame_indices = _resolve_frame_indices(target, len(result.masks_by_frame))
+    gt_masks = target["masks"]
 
-    mean_iou = float(np.mean(per_frame)) if per_frame else 0.0
+    if "orig_size" in target:
+        orig_size = target["orig_size"].tolist() if hasattr(target["orig_size"], "tolist") else target["orig_size"]
+        h, w = map(int, orig_size)
+    else:
+        first_gt = _to_numpy_uint8_mask(gt_masks[frame_indices[0]])
+        h, w = first_gt.shape[:2]
+
+    batch_pred_masks: List[np.ndarray] = []
+    batch_gt_masks: List[np.ndarray] = []
+
+    for dataset_frame_idx in frame_indices:
+        pred_mask_dict = result.masks_by_frame.get(int(dataset_frame_idx), {})
+        if pred_mask_dict:
+            pred_mask = combine_object_masks(pred_mask_dict, (h, w))
+        else:
+            pred_mask = np.zeros((h, w), dtype=np.uint8)
+
+        gt_mask = _to_numpy_uint8_mask(gt_masks[int(dataset_frame_idx)])
+        if pred_mask.shape != gt_mask.shape:
+            pred_mask = cv2.resize(
+                pred_mask,
+                (gt_mask.shape[1], gt_mask.shape[0]),
+                interpolation=cv2.INTER_NEAREST,
+            )
+        pred_mask = np.clip(pred_mask, 0, 1).astype(np.uint8)
+        gt_mask = np.clip(gt_mask, 0, 1).astype(np.uint8)
+
+        batch_pred_masks.append(pred_mask)
+        batch_gt_masks.append(gt_mask)
+
+    j_scores = [float(db_eval_iou(g, p)) for g, p in zip(batch_gt_masks, batch_pred_masks)]
+    f_scores = [float(db_eval_boundary(g, p)) for g, p in zip(batch_gt_masks, batch_pred_masks)]
+    r_scores = get_r2vos_robustness(batch_gt_masks, batch_pred_masks, batch_gt_masks)
+
+    j_mean = float(np.mean(j_scores)) if j_scores else 0.0
+    f_mean = float(np.mean(f_scores)) if f_scores else 0.0
+    r_mean = float(np.mean(r_scores)) if len(r_scores) > 0 else 0.0
+    jf_mean = (j_mean + f_mean) / 2.0
+
     return {
-        "mean_iou": mean_iou,
-        "num_frames_eval": len(per_frame),
+        "J_mean": j_mean,
+        "F_mean": f_mean,
+        "JF_mean": jf_mean,
+        "R_mean": r_mean,
+        "num_frames_eval": len(batch_gt_masks),
+        "J_per_frame": j_scores,
+        "F_per_frame": f_scores,
+        "R_per_frame": [float(x) for x in np.asarray(r_scores).tolist()],
     }
-
 
 
 def sample_identifier(dataset_name: str, target: Mapping[str, Any]) -> str:
@@ -398,7 +412,7 @@ def sample_identifier(dataset_name: str, target: Mapping[str, Any]) -> str:
 def prediction_output_dir(dataset_name: str, output_root: str, target: Mapping[str, Any]) -> str:
     name = dataset_name.lower()
     if name == "rvos":
-        return os.path.join(output_root, "Annotations", str(target["video_id"]), str(target["expr_id"]))
+        return os.path.join(output_root, str(target["video_id"]), str(target["expr_id"]))
     if name == "mevis":
         return os.path.join(output_root, str(target["video_id"]), str(target["exp_id"]))
     return os.path.join(output_root, sample_identifier(dataset_name, target))
@@ -416,6 +430,10 @@ class BenchmarkSummary:
     num_samples: int
     evaluated_samples: int
     mean_iou: Optional[float]
+    mean_j: Optional[float]
+    mean_f: Optional[float]
+    mean_jf: Optional[float]
+    mean_r: Optional[float]
     prediction_root: str
     metadata_root: str
 
@@ -443,7 +461,10 @@ class BenchmarkRunner:
         os.makedirs(self.prediction_root, exist_ok=True)
         os.makedirs(self.metadata_root, exist_ok=True)
 
-        metric_values: List[float] = []
+        metric_j_values: List[float] = []
+        metric_f_values: List[float] = []
+        metric_jf_values: List[float] = []
+        metric_r_values: List[float] = []
         total = len(dataset) if max_samples is None else min(len(dataset), max_samples)
 
         for idx in range(total):
@@ -467,16 +488,19 @@ class BenchmarkRunner:
             save_metadata_json(result, meta_path)
 
             if self.dataset_name in {"rvos", "mevis"}:
-                save_mask_sequence(result, frame_paths, pred_dir, dataset_name=self.dataset_name, target=target)
+                save_mask_sequence(result, frame_paths, pred_dir, palette_mask=False)
             else:
-                metrics = evaluate_sequence_iou(result, target)
-                metric_values.append(metrics["mean_iou"])
+                metrics = evaluate_sequence_metrics(result, target)
+                metric_j_values.append(metrics["J_mean"])
+                metric_f_values.append(metrics["F_mean"])
+                metric_jf_values.append(metrics["JF_mean"])
+                metric_r_values.append(metrics["R_mean"])
                 sample_report = {
                     "sample_id": sample_id,
                     "metrics": metrics,
                     "prediction_dir": pred_dir,
                 }
-                save_mask_sequence(result, frame_paths, pred_dir, dataset_name=self.dataset_name, target=target)
+                save_mask_sequence(result, frame_paths, pred_dir, palette_mask=False)
                 with open(meta_path, "r", encoding="utf-8") as f:
                     meta_data = json.load(f)
                 meta_data["local_eval"] = metrics
@@ -497,8 +521,12 @@ class BenchmarkRunner:
             dataset=self.dataset_name,
             split=split,
             num_samples=total,
-            evaluated_samples=len(metric_values),
-            mean_iou=float(np.mean(metric_values)) if metric_values else None,
+            evaluated_samples=len(metric_j_values),
+            mean_iou=float(np.mean(metric_j_values)) if metric_j_values else None,
+            mean_j=float(np.mean(metric_j_values)) if metric_j_values else None,
+            mean_f=float(np.mean(metric_f_values)) if metric_f_values else None,
+            mean_jf=float(np.mean(metric_jf_values)) if metric_jf_values else None,
+            mean_r=float(np.mean(metric_r_values)) if metric_r_values else None,
             prediction_root=self.prediction_root,
             metadata_root=self.metadata_root,
         )
