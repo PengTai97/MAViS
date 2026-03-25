@@ -96,7 +96,6 @@ python benchmark_inference_pipeline.py \
 ## Release Notes
 - **[2026/01/06]** 🔥 Release our training-free Referring Video Object Segmentation GitHub page.
 - **[2025/12/25]** 🎉 Our Paper has been accepted by **IEEE Transactions on Consumer Electronics.**!
-- 
 ## 🙌 Acknowledgements
 
 This project builds upon several excellent open-source works:
