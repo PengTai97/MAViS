@@ -47,7 +47,8 @@ MAViS/
 ├── agents/                     # three core agents
 ├── pipeline/
 │   ├── mavis_inference_pipeline.py
-│   └── benchmark_inference_pipeline.py
+│   ├── benchmark_inference_pipeline.py
+│   └── metrics.py
 ├── datasets/
 ├── requirements.txt
 ├── environment.yml
