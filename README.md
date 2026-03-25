@@ -10,8 +10,9 @@
 
 - 🔹 Training-free referring video object segmentation
 - 🔹 Multi-agent pipeline (Video Summary → Keyframe Selection → Object Grounding)
-- 🔹 Efficient inference with local MLLM (Qwen-2.5VL-7B)
-- 🔹 Compatible with multiple benchmarks (Ref-Youtube-VOS, DAVIS17, MeViS, RVOS)
+- 🔹 Efficient inference with local MLLM (Qwen-2.5VL-7B), the system runs on a 24G GPU
+- 🔹 Achieves state-of-the-art (SOTA) performance
+- 🔹 Compatible with multiple benchmarks (Ref-Youtube-VOS, Ref-DAVIS17, MeViS)
 
 ---
 
