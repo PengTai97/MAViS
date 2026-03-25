@@ -30,6 +30,19 @@ git clone https://github.com/facebookresearch/sam2
 cd sam2
 pip install -e .
 ```
+### 🤖 Qwen2.5-VL Model
+
+MAViS uses the Qwen2.5-VL-7B-Instruct model as the multimodal backbone.
+
+The model will be automatically downloaded from Hugging Face when you run the pipeline for the first time:
+
+👉 https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct
+
+**Note:**
+- If download fails (e.g., due to network or rate limits), you may need to login via:
+  ```bash
+  huggingface-cli login
+  ```
 ### ⚠️ Optional (Performance Boost)
 To accelerate inference (especially for long videos), you can install FlashAttention:
 ```bash
