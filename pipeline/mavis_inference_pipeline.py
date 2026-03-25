@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Sequence
 
 import cv2
 import numpy as np
@@ -102,7 +101,7 @@ def propagate_masks_bidirectionally(predictor, inference_state, start_frame: int
         reverse=False,
     ):
         video_segments[out_frame_idx] = {
-            out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
+            int(out_obj_id): (out_mask_logits[i] > 0.0).cpu().numpy()
             for i, out_obj_id in enumerate(out_obj_ids)
         }
 
@@ -113,7 +112,7 @@ def propagate_masks_bidirectionally(predictor, inference_state, start_frame: int
         if out_frame_idx < start_frame:
             break
         video_segments[out_frame_idx] = {
-            out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
+            int(out_obj_id): (out_mask_logits[i] > 0.0).cpu().numpy()
             for i, out_obj_id in enumerate(out_obj_ids)
         }
     return video_segments
@@ -175,12 +174,12 @@ class MavisInferencePipeline:
                 image_height=height,
                 conversation_history=summary_history,
             )
-            boxes_by_frame[key_idx] = boxes
+            boxes_by_frame[int(key_idx)] = boxes
             if boxes:
                 any_box_added = add_boxes_to_sam2(
                     predictor=self.predictor,
                     inference_state=inference_state,
-                    frame_idx=key_idx,
+                    frame_idx=int(key_idx),
                     boxes_xyxy=boxes,
                 ) or any_box_added
 
@@ -188,7 +187,7 @@ class MavisInferencePipeline:
             propagate_masks_bidirectionally(
                 predictor=self.predictor,
                 inference_state=inference_state,
-                start_frame=ks_result["start_frame"],
+                start_frame=int(ks_result["start_frame"]),
             )
             if any_box_added
             else {}
@@ -212,8 +211,70 @@ def save_result_json(result: MavisResult, output_json: str):
         int(frame_idx): {int(obj_id): None for obj_id in obj_dict.keys()}
         for frame_idx, obj_dict in result.masks_by_frame.items()
     }
-    with open(output_json, "w", encoding="utf-8") as f:
+    output_path = Path(output_json)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as f:
         json.dump(serializable, f, ensure_ascii=False, indent=2)
+
+
+def merge_frame_masks(obj_masks: Dict[int, np.ndarray]) -> np.ndarray:
+    merged: np.ndarray | None = None
+    for _, mask in sorted(obj_masks.items()):
+        mask_2d = np.asarray(mask)
+        if mask_2d.ndim == 3:
+            mask_2d = np.squeeze(mask_2d, axis=0)
+        mask_bool = mask_2d.astype(bool)
+        if merged is None:
+            merged = mask_bool
+        else:
+            merged = np.logical_or(merged, mask_bool)
+    if merged is None:
+        raise ValueError("obj_masks is empty")
+    return (merged.astype(np.uint8) * 255)
+
+
+def overlay_mask_on_image(image: np.ndarray, binary_mask: np.ndarray, alpha: float = 0.45) -> np.ndarray:
+    if binary_mask.ndim != 2:
+        raise ValueError("binary_mask must be HxW")
+    overlay = image.copy()
+    colored = np.zeros_like(image)
+    colored[:, :, 1] = 255
+    mask_bool = binary_mask > 0
+    overlay[mask_bool] = cv2.addWeighted(image, 1.0 - alpha, colored, alpha, 0.0)[mask_bool]
+    return overlay
+
+
+def save_masks_and_overlays(
+    result: MavisResult,
+    frame_paths: Sequence[str],
+    mask_output_dir: str | None = None,
+    overlay_output_dir: str | None = None,
+):
+    mask_dir = Path(mask_output_dir) if mask_output_dir else None
+    overlay_dir = Path(overlay_output_dir) if overlay_output_dir else None
+
+    if mask_dir:
+        mask_dir.mkdir(parents=True, exist_ok=True)
+    if overlay_dir:
+        overlay_dir.mkdir(parents=True, exist_ok=True)
+
+    for frame_idx, obj_masks in sorted(result.masks_by_frame.items()):
+        if frame_idx < 0 or frame_idx >= len(frame_paths) or not obj_masks:
+            continue
+
+        binary_mask = merge_frame_masks(obj_masks)
+        frame_path = Path(frame_paths[frame_idx])
+        stem = frame_path.stem
+
+        if mask_dir:
+            cv2.imwrite(str(mask_dir / f"{stem}.png"), binary_mask)
+
+        if overlay_dir:
+            image = cv2.imread(str(frame_path), cv2.IMREAD_COLOR)
+            if image is None:
+                raise ValueError(f"Failed to read frame for overlay: {frame_path}")
+            overlay = overlay_mask_on_image(image, binary_mask)
+            cv2.imwrite(str(overlay_dir / f"{stem}.png"), overlay)
 
 
 def _build_cli() -> argparse.ArgumentParser:
@@ -225,7 +286,15 @@ def _build_cli() -> argparse.ArgumentParser:
     parser.add_argument("--top_k", type=int, default=5)
     parser.add_argument("--threshold", type=float, default=0.0)
     parser.add_argument("--num_summary_samples", type=int, default=10)
-    parser.add_argument("--output_json", default="mavis_result.json")
+
+    parser.add_argument("--save_metadata_json", action="store_true", help="Save intermediate metadata JSON. Default: off.")
+    parser.add_argument("--output_json", default="mavis_result.json", help="Metadata JSON path when --save_metadata_json is enabled.")
+
+    parser.add_argument("--save_masks", action="store_true", help="Save one binary mask PNG per frame. Default: off.")
+    parser.add_argument("--mask_output_dir", default="mavis_masks", help="Directory for per-frame mask PNGs.")
+
+    parser.add_argument("--save_overlays", action="store_true", help="Save image/mask overlay PNG per frame. Default: off.")
+    parser.add_argument("--overlay_output_dir", default="mavis_overlays", help="Directory for overlay PNGs.")
     return parser
 
 
@@ -242,11 +311,29 @@ if __name__ == "__main__":
         threshold=args.threshold,
         num_summary_samples=args.num_summary_samples,
     )
-    save_result_json(result, args.output_json)
+
+    frame_paths = list_video_frames(args.video_dir)
+
+    if args.save_metadata_json:
+        save_result_json(result, args.output_json)
+
+    if args.save_masks or args.save_overlays:
+        save_masks_and_overlays(
+            result=result,
+            frame_paths=frame_paths,
+            mask_output_dir=args.mask_output_dir if args.save_masks else None,
+            overlay_output_dir=args.overlay_output_dir if args.save_overlays else None,
+        )
+
     print(json.dumps({
         "summary": result.summary,
         "start_frame": result.start_frame,
         "key_frame_indices": result.key_frame_indices,
         "boxes_by_frame": result.boxes_by_frame,
-        "output_json": args.output_json,
+        "saved_metadata_json": bool(args.save_metadata_json),
+        "saved_masks": bool(args.save_masks),
+        "saved_overlays": bool(args.save_overlays),
+        "output_json": args.output_json if args.save_metadata_json else None,
+        "mask_output_dir": args.mask_output_dir if args.save_masks else None,
+        "overlay_output_dir": args.overlay_output_dir if args.save_overlays else None,
     }, ensure_ascii=False, indent=2))
