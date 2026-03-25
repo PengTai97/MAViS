@@ -324,6 +324,14 @@ def save_metadata_json(result: MavisResult, save_path: str):
         json.dump(serialize_result_without_masks(result), f, ensure_ascii=False, indent=2)
 
 
+def append_local_eval_to_metadata(meta_path: str, metrics: Mapping[str, Any]):
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta_data = json.load(f)
+    meta_data["local_eval"] = metrics
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta_data, f, ensure_ascii=False, indent=2)
+
+
 
 
 def _to_numpy_uint8_mask(mask: Any) -> np.ndarray:
@@ -444,7 +452,8 @@ class BenchmarkRunner:
         pipeline: MavisInferencePipeline,
         dataset_name: str,
         prediction_root: str,
-        metadata_root: str,
+        metadata_root: Optional[str] = None,
+        save_metadata_json: bool = False,
         num_summary_samples: int = 10,
         top_k: int = 5,
         threshold: float = 0.0,
@@ -453,13 +462,17 @@ class BenchmarkRunner:
         self.dataset_name = dataset_name.lower()
         self.prediction_root = prediction_root
         self.metadata_root = metadata_root
+        self.save_metadata_json = save_metadata_json
         self.num_summary_samples = num_summary_samples
         self.top_k = top_k
         self.threshold = threshold
 
     def run_dataset(self, dataset, max_samples: Optional[int] = None, split: str = "val") -> BenchmarkSummary:
         os.makedirs(self.prediction_root, exist_ok=True)
-        os.makedirs(self.metadata_root, exist_ok=True)
+        if self.save_metadata_json:
+            if not self.metadata_root:
+                raise ValueError("metadata_root must be provided when save_metadata_json=True")
+            os.makedirs(self.metadata_root, exist_ok=True)
 
         metric_j_values: List[float] = []
         metric_f_values: List[float] = []
@@ -484,8 +497,13 @@ class BenchmarkRunner:
             )
 
             pred_dir = prediction_output_dir(self.dataset_name, self.prediction_root, target)
-            meta_path = os.path.join(self.metadata_root, f"{sample_id}.json")
-            save_metadata_json(result, meta_path)
+            meta_path = (
+                os.path.join(self.metadata_root, f"{sample_id}.json")
+                if self.save_metadata_json and self.metadata_root
+                else None
+            )
+            if meta_path is not None:
+                save_metadata_json(result, meta_path)
 
             if self.dataset_name in {"rvos", "mevis"}:
                 save_mask_sequence(result, frame_paths, pred_dir, palette_mask=False)
@@ -501,11 +519,8 @@ class BenchmarkRunner:
                     "prediction_dir": pred_dir,
                 }
                 save_mask_sequence(result, frame_paths, pred_dir, palette_mask=False)
-                with open(meta_path, "r", encoding="utf-8") as f:
-                    meta_data = json.load(f)
-                meta_data["local_eval"] = metrics
-                with open(meta_path, "w", encoding="utf-8") as f:
-                    json.dump(meta_data, f, ensure_ascii=False, indent=2)
+                if meta_path is not None:
+                    append_local_eval_to_metadata(meta_path, metrics)
                 print(json.dumps(sample_report, ensure_ascii=False))
 
             print(json.dumps({
@@ -528,11 +543,12 @@ class BenchmarkRunner:
             mean_jf=float(np.mean(metric_jf_values)) if metric_jf_values else None,
             mean_r=float(np.mean(metric_r_values)) if metric_r_values else None,
             prediction_root=self.prediction_root,
-            metadata_root=self.metadata_root,
+            metadata_root=self.metadata_root if self.save_metadata_json else "",
         )
 
-        with open(os.path.join(self.metadata_root, "benchmark_summary.json"), "w", encoding="utf-8") as f:
-            json.dump(asdict(summary), f, ensure_ascii=False, indent=2)
+        if self.save_metadata_json and self.metadata_root:
+            with open(os.path.join(self.metadata_root, "benchmark_summary.json"), "w", encoding="utf-8") as f:
+                json.dump(asdict(summary), f, ensure_ascii=False, indent=2)
         return summary
 
 
@@ -550,7 +566,8 @@ def build_cli() -> argparse.ArgumentParser:
     parser.add_argument("--sam2_config", required=True)
     parser.add_argument("--qwen_model_name", default="Qwen/Qwen2.5-VL-7B-Instruct")
     parser.add_argument("--prediction_root", required=True)
-    parser.add_argument("--metadata_root", required=True)
+    parser.add_argument("--metadata_root", default=None, help="Directory for optional intermediate metadata JSON files.")
+    parser.add_argument("--save_metadata_json", action="store_true", help="Save intermediate per-sample metadata JSON files and benchmark summary. Disabled by default.")
     parser.add_argument("--num_frames", type=int, default=20)
     parser.add_argument("--max_skip", type=int, default=3)
     parser.add_argument("--num_summary_samples", type=int, default=10)
@@ -582,6 +599,7 @@ if __name__ == "__main__":
         dataset_name=args.dataset,
         prediction_root=args.prediction_root,
         metadata_root=args.metadata_root,
+        save_metadata_json=args.save_metadata_json,
         num_summary_samples=args.num_summary_samples,
         top_k=args.top_k,
         threshold=args.threshold,
