@@ -31,6 +31,7 @@ cd sam2
 pip install -e .
 ```
 ### ⚠️ Optional (Performance Boost)
+To accelerate inference (especially for long videos), you can install FlashAttention:
 ```bash
 pip install flash-attn
 ```
