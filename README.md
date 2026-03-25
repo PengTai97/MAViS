@@ -43,6 +43,7 @@ We recommend:
 pip install "transformers>=4.50"
 ```
 ### 📁 Project Structure
+```bash
 MAViS/
 ├── agents/                     # three core agents
 ├── pipeline/
@@ -52,6 +53,7 @@ MAViS/
 ├── requirements.txt
 ├── environment.yml
 └── README.md
+```
 
 ## Data Preparation
 Referring Video Object Segmentation
@@ -71,15 +73,18 @@ Submit your result to the online evaluation [server](https://codalab.lisn.upsacl
 ### Ref-DAVIS-17
 
 ###🚀 Quick Demo (Single Video)
+```bash
 python mavis_inference_pipeline.py \
   --video_dir /path/to/video_frames \
   --description "a man in black shirt" \
   --sam2_checkpoint /path/to/sam2.pt \
   --sam2_config /path/to/sam2.yaml \
   --output_json output.json
+```
 
 ###🧪 Benchmark Inference
 We provide a unified benchmark script:
+```bash
 python benchmark_inference_pipeline.py \
   --dataset {referformer,davis,rvos,mevis} \
   --dataset_root /path/to/dataset \
@@ -88,7 +93,7 @@ python benchmark_inference_pipeline.py \
   --sam2_config /path/to/sam2.yaml \
   --prediction_root outputs \
   --metadata_root meta
-
+```
 ## Release Notes
 - **[2026/01/06]** 🔥 Release our training-free Referring Video Object Segmentation GitHub page.
 - **[2025/12/25]** 🎉 Our Paper has been accepted by **IEEE Transactions on Consumer Electronics.**!
